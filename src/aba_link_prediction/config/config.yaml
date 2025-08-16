@@ -43,21 +43,21 @@ models:
 # Training settings
 training:
   num_epochs: 50
-  learning_rate: 1e-3
-  weight_decay: 1e-4
+  learning_rate: 0.001
+  weight_decay: 0.0001
   scheduler_type: "cosine"
   warmup_steps: 100
   early_stopping_patience: 5
   gradient_clip: 1.0
   
   # BERT-specific settings
-  bert_learning_rate: 2e-5
+  bert_learning_rate: 0.00002
   bert_num_epochs: 10
   
   # Contrastive learning settings
   contrastive:
     num_epochs: 100
-    learning_rate: 3e-4
+    learning_rate: 0.0003
     temperature: 0.07
     augmentation_prob: 0.2
     batch_size: 64

@@ -1,0 +1,26 @@
+2025-08-16 15:44:59,421 - 
+==================================================
+2025-08-16 15:44:59,421 - Experiment 1: RGCN without contrastive learning
+2025-08-16 15:44:59,421 - Training rgcn (contrastive=False)...
+Traceback (most recent call last):
+  File "/home/t_kaz/aba-mining-hotelreviews/run_experiments.py", line 380, in <module>
+    results = main()
+  File "/home/t_kaz/aba-mining-hotelreviews/run_experiments.py", line 320, in main
+    metrics, train_losses, val_accs = train_graph_model('rgcn', use_contrastive=False)
+  File "/home/t_kaz/aba-mining-hotelreviews/run_experiments.py", line 124, in train_graph_model
+    outputs = model(x, edge_index, target_edges=train_edges)
+  File "/home/t_kaz/aba-mining-hotelreviews/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/t_kaz/aba-mining-hotelreviews/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/t_kaz/aba-mining-hotelreviews/src/aba_link_prediction/models/rgcn.py", line 150, in forward
+    z = self.encode(x, edge_index, edge_type)
+  File "/home/t_kaz/aba-mining-hotelreviews/src/aba_link_prediction/models/rgcn.py", line 107, in encode
+    h = self.rgcn_layers[i](h, edge_index, edge_type)
+  File "/home/t_kaz/aba-mining-hotelreviews/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/t_kaz/aba-mining-hotelreviews/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/t_kaz/aba-mining-hotelreviews/.venv/lib/python3.10/site-packages/torch_geometric/nn/conv/rgcn_conv.py", line 198, in forward
+    assert edge_type is not None
+AssertionError

@@ -172,6 +172,7 @@ class ABAGraphDataset:
         
         self.edge_index = torch.tensor(edges, dtype=torch.long).t()
         self.edge_labels = torch.tensor(edge_labels, dtype=torch.float)
+        edge_labels = np.array(edge_labels)  # Keep numpy array for stratification
         
         # Split edges for train/val/test
         num_edges = self.edge_index.shape[1]
