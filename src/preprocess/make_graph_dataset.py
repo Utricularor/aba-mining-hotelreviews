@@ -74,7 +74,7 @@ def draw_graph(g: nx.DiGraph, figsize=(10, 6)):
     plt.show()
 
 if __name__ == "__main__":
-    aba_file_path = "data/Original ABA Dataset for Version 2 [June 15] - 1. hotel in Larnaca-Cyprus - Topic.csv"
+    aba_file_path = "data/input/Original ABA Dataset for Version 2 [June 15] - 1. hotel in Larnaca-Cyprus - Topic.csv"
     cols = ['ReviewID', 'Title', 'Topic', 'Pos/Neg', 'Claim', 'Head',
     'Body 1', 'Body 2', 'Body 3', 'Body 4', 'Body 5', 'Body 6', 'Body 7',
     'Body 8', 'Body 9', 'Body 10', 'Body 11', 'Body 12', 'Body 13',
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     aba_room = aba[aba['Topic'] == 'Room']
     # aba_room.to_csv("data/aba_room.csv", index=False)
     
-    contra_file_path = "data/Room_Contrary(P)Body(N)_4omini.csv"
+    contra_file_path = "data/output/Silver_Room_ContP_BodyN_4omini.csv"
     contra = pd.read_csv(contra_file_path)
     
     aba_graph_room = build_aba_graph(aba_room, contra)
