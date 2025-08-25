@@ -1,96 +1,122 @@
-# aba-mining-hotelreviews
+# ABA Link Prediction for Hotel Reviews
 
-## Link Prediction with RGCN + DistMult
+This module implements various models for predicting attack links in Argumentation-Based Analysis (ABA) using hotel review data.
 
-## Overview
-`rgcn_link_predict.py` trains and evaluates a link prediction model that combines an **RGCN (Relational Graph Convolutional Network)** encoder and a **DistMult** decoder.  
-Each node name is first embedded with **Sentence-Transformers**, and the resulting node features are passed through the RGCN.  
-The DistMult decoder then predicts whether an edge between two nodes should exist (binary Yes/No).
+## Features
 
-The input is a tab-separated file with three columns:
+- **RGCN Models**: Relational Graph Convolutional Networks with optional attention mechanisms
+- **BERT Models**: Bi-encoder and cross-encoder BERT architectures for text-based prediction
+- **Contrastive Learning**: Pre-training methods for improving node representations
+- **Comprehensive Evaluation**: Multiple metrics including accuracy, F1, ROC-AUC, and graph-specific metrics
+
+## Installation
+
+```bash
+pip install -r requirements_aba.txt
 ```
-Assumption<TAB>Proposition<TAB>label
-```
-where `label` is either `Yes` (positive edge) or anything else (negative edge).
-
----
-
-## Processing Pipeline
-1. **Data Loading (`load_tsv_graph`)**  
-   * Reads the TSV file and builds a node vocabulary from the `head` and `tail` columns.  
-   * Encodes every unique node string with a `SentenceTransformer`; the resulting vectors become node features `x` in a `torch_geometric.data.Data` object.  
-   * Edge indices (`edge_index`, shape 2 × E) and binary labels (`labels`, shape E) are returned together with the graph data.
-
-2. **Model Components**
-   * **RGCNEncoder** – a stack of ≥3 `RGCNConv` layers: input → hidden → output dimensions.  
-   * **DistMultDecoder** – learns a relation embedding `r` and scores an edge as  
-     \(score = \sum_i h_i \; r_i \; t_i\).  
-   * **LinkPredictor** – wraps the encoder and decoder.
-
-3. **Edge Split**  
-   * All edges are shuffled and split into train / validation / test sets according to `val_ratio` and `test_ratio`.
-
-4. **Training Loop**  
-   * Loss: `BCEWithLogitsLoss`  
-   * Optimizer: `Adam`  
-   * Every `log_every` epochs the script prints the validation AUROC.
-
-5. **Evaluation**  
-   * After training, AUROC is reported on the held-out test edges.
-
----
-
-## Command-line Arguments
-| Argument | Default | Description |
-|---|---|---|
-| `--data` | (required) | Path to the TSV file (`head tail label`) |
-| `--lm_model` | `all-MiniLM-L6-v2` | Sentence-Transformer model name |
-| `--hidden_dim` | 256 | Hidden dimension of the RGCN |
-| `--out_dim` | 256 | Output dimension of the RGCN / decoder |
-| `--num_layers` | 3 | Number of RGCN layers (≥3) |
-| `--epochs` | 100 | Training epochs |
-| `--lr` | 1e-3 | Learning rate (Adam) |
-| `--val_ratio` | 0.1 | Fraction of edges for validation |
-| `--test_ratio` | 0.1 | Fraction of edges for testing |
-| `--log_every` | 10 | Log interval (epochs) |
-
----
 
 ## Quick Start
+
+### 1. Train RGCN Model
+
 ```bash
-# Example: train for 20 epochs on the sample data
-python rgcn_link_predict.py \
-  --data sample.tsv \
-  --epochs 20 \
-  --hidden_dim 64 \
-  --out_dim 64 \
-  --num_layers 3 \
-  --val_ratio 0.2 \
-  --test_ratio 0.2
+# Basic RGCN
+python train_rgcn.py --model rgcn
+
+# RGCN with attention
+python train_rgcn.py --model rgcn_attention
+
+# With contrastive pre-training
+python train_rgcn.py --model rgcn --pretrain
 ```
 
----
+### 2. Train BERT Model
 
-## Requirements
-* Python 3.10+
-* PyTorch
-* PyTorch Geometric (and its CUDA dependencies)
-* torchmetrics
-* sentence-transformers
-* pandas
-
-Install via `make`:
 ```bash
-make
+# Bi-encoder BERT
+python train_bert.py --model bert
+
+# Cross-encoder BERT
+python train_bert.py --model cross_encoder
 ```
 
----
+### 3. Compare Models
 
-## Output
-The script prints per-epoch **Loss** and **Validation AUROC**, followed by the final **Test AUROC**.
+```bash
+python compare_models.py
+```
 
----
+## Project Structure
 
-## Notes
-* Currently the script assumes a single relation (`edge_type = 0`). By extending the TSV with a relation column and feeding it into `edge_type`, you can handle multi-relation graphs.
-* For large graphs, embedding all node strings with Sentence-Transformers can be a bottleneck. Consider caching or batching embeddings when necessary.
+```
+src/aba_link_prediction/
+├── config/           # Configuration files
+├── data_loaders/     # Data loading utilities
+├── models/           # Model implementations
+│   ├── rgcn.py      # RGCN models
+│   ├── bert_classifier.py  # BERT models
+│   └── contrastive.py      # Contrastive learning
+├── trainers/         # Training utilities
+├── evaluators/       # Evaluation metrics
+└── utils/           # Helper functions
+```
+
+## Configuration
+
+Edit `src/aba_link_prediction/config/config.yaml` to customize:
+- Data paths and preprocessing
+- Model hyperparameters
+- Training settings
+- Evaluation metrics
+
+## Models
+
+### RGCN (Relational Graph Convolutional Network)
+- Captures graph structure of argumentation
+- Supports multiple relation types
+- Optional attention mechanism
+
+### BERT-based Models
+- **Bi-encoder**: Encodes assumptions and propositions separately
+- **Cross-encoder**: Jointly encodes assumption-proposition pairs
+- Supports various pooling strategies
+
+### Contrastive Learning
+- SimCLR-based pre-training
+- Graph contrastive learning with augmentation
+- Improves node representation quality
+
+## Evaluation Metrics
+
+- **Classification**: Accuracy, Precision, Recall, F1-score
+- **Ranking**: ROC-AUC, Average Precision
+- **Graph-specific**: Hits@K, Mean Reciprocal Rank (MRR)
+
+## Results
+
+Results are saved in:
+- `models/aba_link_prediction/`: Trained model checkpoints
+- `results/aba_link_prediction/`: Evaluation metrics and plots
+- `logs/aba_link_prediction/`: Training logs
+
+## Usage Example
+
+```python
+from src.aba_link_prediction.data_loaders import ABADataset
+from src.aba_link_prediction.models import BERTLinkPredictor
+from src.aba_link_prediction.trainers import BERTTrainer
+
+# Load data
+dataset = ABADataset('data/output/Silver_Room_ContP_BodyN_4omini.csv')
+
+# Initialize model
+model = BERTLinkPredictor(model_name='bert-base-uncased')
+
+# Train
+trainer = BERTTrainer(model)
+trainer.train(train_loader, val_loader, num_epochs=10)
+```
+
+## Citation
+
+If you use this code, please cite the original ABA mining work and this implementation.
