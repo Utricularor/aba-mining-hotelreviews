@@ -127,7 +127,33 @@ def process_csv_with_gpt(input_file_path, output_file_path, sample_size=None, st
     
     print("CSVファイルを読み込み中...")
     df = pd.read_csv(input_file_path)
-    df['isContrary'] = ""
+    
+    # 出力ファイルが既に存在する場合、既存のisContraryカラムの値を読み込む
+    if os.path.exists(output_file_path):
+        print(f"既存の出力ファイル {output_file_path} を検出しました。")
+        existing_df = pd.read_csv(output_file_path)
+        
+        # 既存のisContraryカラムがある場合、その値をコピー
+        if 'isContrary' in existing_df.columns:
+            df['isContrary'] = existing_df['isContrary'].fillna("")
+            
+            # 値が入っている最後の行を見つける
+            last_filled_idx = -1
+            for idx in range(len(df)):
+                if pd.notna(df.at[idx, 'isContrary']) and df.at[idx, 'isContrary'] != "":
+                    last_filled_idx = idx
+            
+            # start_fromを自動調整（既に処理済みの行はスキップ）
+            if last_filled_idx >= 0:
+                auto_start = last_filled_idx + 1
+                if auto_start > start_from:
+                    print(f"既に {last_filled_idx + 1} 行目まで処理済みです。")
+                    print(f"処理を {auto_start + 1} 行目（インデックス: {auto_start}）から開始します。")
+                    start_from = auto_start
+        else:
+            df['isContrary'] = ""
+    else:
+        df['isContrary'] = ""
     
     # 処理範囲を決定
     total_rows = len(df)
@@ -137,31 +163,43 @@ def process_csv_with_gpt(input_file_path, output_file_path, sample_size=None, st
     # if sample_size:
     #     end_row = min(start_from + sample_size, end_row)
     
-    print(f"行 {start_from} から {end_row-1} まで処理します (全 {end_row - start_from} 件)")
+    # 全て処理済みの場合
+    if start_from >= total_rows:
+        print(f"全ての行が既に処理済みです（総行数: {total_rows}）")
+        return df
+    
+    print(f"行 {start_from + 1} から {end_row} まで処理します (全 {end_row - start_from} 件)")
     
     print("GPT-4o-miniへの問い合わせを開始...")
     
     # start_fromから処理を開始
     rows_to_process = df.iloc[start_from:end_row]
+    processed_count = 0
+    
     for i, (index, row) in enumerate(tqdm(rows_to_process.iterrows(), total=len(rows_to_process), desc="Processing")):
+        # 既に値が入っている行はスキップ
+        if pd.notna(df.at[index, 'isContrary']) and df.at[index, 'isContrary'] != "":
+            continue
+            
         assumption = row['Assumption']
         proposition = row['Proposition']
         
         # GPT-4o-miniに問い合わせ
         result = ask_gpt_contrary(assumption, proposition)
         df.at[index, 'isContrary'] = result
+        processed_count += 1
         
         # API制限を避けるために少し待機
         time.sleep(0.5)
         
         # 進捗を定期的に保存（50件ごと）
-        if (i + 1) % 50 == 0:
+        if processed_count > 0 and processed_count % 50 == 0:
             df.to_csv(output_file_path, index=False)
-            print(f"進捗保存: {start_from + i + 1} 件完了")
+            print(f"進捗保存: {processed_count} 件処理完了")
     
     # 最終結果を保存
     df.to_csv(output_file_path, index=False)
-    print(f"処理完了！結果を {output_file_path} に保存しました")
+    print(f"処理完了！{processed_count} 件の新規処理を行い、結果を {output_file_path} に保存しました")
     
     return df
 
