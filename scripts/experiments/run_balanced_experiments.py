@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Add src to path
-sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.aba_link_prediction.data_loaders.balanced_dataset import BalancedABADataset, BalancedGraphDataset
 from src.aba_link_prediction.models import RGCN, RGCNWithAttention, BERTLinkPredictor, CrossEncoderBERT
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 CONFIG = {
-    'data_path': 'data/output/Silver_Room_ContP_BodyN_4omini.csv',
+    'data_path': '../../data/output/Silver_Room_ContP_BodyN_4omini.csv',
     'seed': 42,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'batch_size': 32,

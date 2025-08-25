@@ -17,7 +17,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from tqdm import tqdm
 
 # Add src to path
-sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.aba_link_prediction.data_loaders import ABADataset, ABAGraphDataset
 from src.aba_link_prediction.models import RGCN, RGCNWithAttention, BERTLinkPredictor, CrossEncoderBERT
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 CONFIG = {
-    'data_path': 'data/output/Silver_Room_ContP_BodyN_4omini.csv',
+    'data_path': '../../data/output/Silver_Room_ContP_BodyN_4omini.csv',
     'seed': 42,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'num_epochs': 20,  # Reduced for faster experiments
