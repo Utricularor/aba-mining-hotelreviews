@@ -117,6 +117,135 @@ trainer = BERTTrainer(model)
 trainer.train(train_loader, val_loader, num_epochs=10)
 ```
 
+## Running Robust Experiments
+
+### 実験の実行
+
+設定ファイルを編集して実験をカスタマイズできます：
+
+```bash
+# 設定ファイルを編集
+vim config/robust_experiment.yaml
+
+# 実験を実行
+python src/experiments/run_robust_experiment.py --config config/robust_experiment.yaml
+```
+
+### 設定ファイルの主要項目
+
+- `data`: データファイルのパスと出力先
+- `negative_sampling`: ネガティブサンプリング戦略の設定
+- `cross_validation`: Cross-validationの設定
+- `models`: 各モデルの有効化とハイパーパラメータ
+- `visualization`: 可視化の設定
+
+### 実験結果
+
+実験結果は以下に保存されます：
+
+- `data/training_results/experiment_results.json`: 評価メトリクスと統計量
+- `data/training_results/*.png`: 可視化グラフ（設定で有効化した場合）
+
+## Testing
+
+### テスト実行手順
+
+#### すべてのテストを実行
+
+```bash
+# プロジェクトルートで実行
+pytest tests/
+```
+
+#### ユニットテストのみ実行
+
+```bash
+pytest tests/unit/
+```
+
+#### 統合テストのみ実行
+
+```bash
+pytest tests/integration/
+```
+
+#### カバレッジレポート付きで実行
+
+```bash
+pytest --cov=src --cov-report=html tests/
+```
+
+#### 特定のテストファイルを実行
+
+```bash
+# モデルのテスト
+pytest tests/unit/test_models.py
+
+# Cross-validationのテスト
+pytest tests/unit/test_cross_validation.py
+
+# 可視化のテスト
+pytest tests/unit/test_visualization.py
+
+# パイプライン全体のテスト
+pytest tests/integration/test_experiment_pipeline.py
+```
+
+#### 詳細な出力で実行
+
+```bash
+pytest -v tests/
+```
+
+### テスト構成
+
+- `tests/conftest.py`: pytest設定とフィクスチャ
+- `tests/unit/`: ユニットテスト（個別の関数・クラスのテスト）
+  - `test_models.py`: モデル定義のテスト
+  - `test_cross_validation.py`: Cross-validation機能のテスト
+  - `test_visualization.py`: 可視化・統計分析のテスト
+- `tests/integration/`: 統合テスト（エンドツーエンドのテスト）
+  - `test_experiment_pipeline.py`: 実験パイプライン全体のテスト
+
+### モックデータについて
+
+テストはすべてモックデータを使用して実行されます。実データは不要です。
+モックデータは `tests/conftest.py` で定義されています。
+
+## Project Structure (Updated)
+
+```
+.
+├── config/
+│   └── robust_experiment.yaml       # 実験設定ファイル
+├── src/
+│   ├── preprocess/                  # データ前処理
+│   ├── augmentation/                # データ拡張（ネガティブサンプリング）
+│   ├── model_defs/                  # モデル定義
+│   │   └── models.py               # R-GCN, BERT models, Baselines
+│   ├── model_training/              # 学習・評価
+│   │   ├── train.py                # R-GCN学習
+│   │   ├── train_bert.py           # BERT学習
+│   │   └── evaluate.py             # 評価関数
+│   ├── experiments/                 # 実験実行
+│   │   ├── cross_validation.py     # Cross-validation
+│   │   └── run_robust_experiment.py # メイン実験スクリプト
+│   └── visualization/               # 可視化・統計分析
+│       └── plot_results.py
+├── tests/
+│   ├── conftest.py                 # pytest設定
+│   ├── unit/                       # ユニットテスト
+│   │   ├── test_models.py
+│   │   ├── test_cross_validation.py
+│   │   └── test_visualization.py
+│   └── integration/                # 統合テスト
+│       └── test_experiment_pipeline.py
+├── data/
+│   ├── output/                     # 入力データ
+│   └── training_results/           # 実験結果
+└── README.md
+```
+
 ## Citation
 
 If you use this code, please cite the original ABA mining work and this implementation.
