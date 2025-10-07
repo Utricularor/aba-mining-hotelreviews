@@ -124,16 +124,29 @@ trainer.train(train_loader, val_loader, num_epochs=10)
 設定ファイルを編集して実験をカスタマイズできます：
 
 ```bash
-# 設定ファイルを編集
-vim config/robust_experiment.yaml
+# デフォルト設定で実行（実験IDは自動生成されます）
+python src/experiments/run_robust_experiment.py
 
-# 実験を実行
-python src/experiments/run_robust_experiment.py --config config/robust_experiment.yaml
+# 実験IDを指定して実行
+python src/experiments/run_robust_experiment.py --experiment-id exp001
+
+# カスタム設定ファイルと実験IDを指定
+python src/experiments/run_robust_experiment.py --config my_config.yaml --experiment-id exp002
 ```
+
+### 実験IDの指定方法
+
+実験IDは3つの方法で指定できます（優先順位順）：
+
+1. **コマンドライン引数**: `--experiment-id <ID>`
+2. **YAML設定ファイル**: `data.experiment_id: "exp001"`
+3. **自動生成**: どちらも指定しない場合、タイムスタンプで自動生成（例: `exp_20250107_143022`）
 
 ### 設定ファイルの主要項目
 
 - `data`: データファイルのパスと出力先
+  - `base_output_dir`: 結果の保存先ベースディレクトリ
+  - `experiment_id`: 実験ID（nullの場合は自動生成）
 - `negative_sampling`: ネガティブサンプリング戦略の設定
 - `cross_validation`: Cross-validationの設定
 - `models`: 各モデルの有効化とハイパーパラメータ
@@ -141,10 +154,24 @@ python src/experiments/run_robust_experiment.py --config config/robust_experimen
 
 ### 実験結果
 
-実験結果は以下に保存されます：
+実験結果は実験IDごとにディレクトリが作成され、以下に保存されます：
 
-- `data/training_results/experiment_results.json`: 評価メトリクスと統計量
-- `data/training_results/*.png`: 可視化グラフ（設定で有効化した場合）
+- `data/training_results/<実験ID>/experiment_results.json`: 評価メトリクスと統計量
+- `data/training_results/<実験ID>/*.png`: 可視化グラフ（設定で有効化した場合）
+
+例：
+```
+data/training_results/
+├── exp001/
+│   ├── experiment_results.json
+│   ├── box_plots.png
+│   └── bar_charts.png
+├── exp002/
+│   ├── experiment_results.json
+│   └── ...
+└── exp_20250107_143022/  # 自動生成された実験ID
+    └── ...
+```
 
 ## Testing
 

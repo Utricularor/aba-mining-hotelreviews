@@ -11,6 +11,7 @@ import yaml
 import numpy as np
 import torch
 from torch_geometric.data import Data
+from datetime import datetime
 
 # プロジェクトルートをパスに追加
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -63,6 +64,62 @@ def load_config(config_path: str) -> dict:
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     return config
+
+
+def determine_experiment_id(config: dict, args=None) -> str:
+    """
+    実験IDを決定する
+    
+    優先順位:
+    1. コマンドライン引数 (--experiment-id)
+    2. YAML設定ファイル (data.experiment_id)
+    3. タイムスタンプで自動生成
+    
+    Args:
+        config: 設定辞書
+        args: コマンドライン引数（オプション）
+    
+    Returns:
+        experiment_id: 実験ID
+    """
+    # コマンドライン引数が最優先
+    if args and hasattr(args, 'experiment_id') and args.experiment_id:
+        experiment_id = args.experiment_id
+        print(f"📌 実験ID（コマンドライン引数）: {experiment_id}")
+        return experiment_id
+    
+    # 次にYAML設定
+    if config['data'].get('experiment_id'):
+        experiment_id = config['data']['experiment_id']
+        print(f"📌 実験ID（YAML設定）: {experiment_id}")
+        return experiment_id
+    
+    # どちらもない場合はタイムスタンプで自動生成
+    experiment_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    print(f"📌 実験ID（自動生成）: {experiment_id}")
+    return experiment_id
+
+
+def setup_output_directory(config: dict, experiment_id: str) -> str:
+    """
+    出力ディレクトリをセットアップする
+    
+    Args:
+        config: 設定辞書
+        experiment_id: 実験ID
+    
+    Returns:
+        output_dir: 出力ディレクトリのパス
+    """
+    base_output_dir = config['data']['base_output_dir']
+    output_dir = os.path.join(base_output_dir, experiment_id)
+    
+    # ディレクトリを作成
+    os.makedirs(output_dir, exist_ok=True)
+    
+    print(f"📁 出力ディレクトリ: {output_dir}")
+    
+    return output_dir
 
 
 def prepare_data(config: dict):
@@ -200,15 +257,26 @@ def generate_negatives(original_graph, all_nodes, attack_edges,
     return all_negatives
 
 
-def run_robust_experiment(config_path: str):
+def run_robust_experiment(config_path: str, args=None):
     """
     Robust experimentを実行
     
     Args:
         config_path: 設定ファイルのパス
+        args: コマンドライン引数（オプション）
     """
     # 設定の読み込み
     config = load_config(config_path)
+    
+    # 実験IDの決定
+    experiment_id = determine_experiment_id(config, args)
+    
+    # 出力ディレクトリのセットアップ
+    output_dir = setup_output_directory(config, experiment_id)
+    
+    # 設定を更新（後続の処理で使用）
+    config['data']['output_dir'] = output_dir
+    config['data']['experiment_id'] = experiment_id
     
     # シード設定
     set_seed(config['data']['seed'])
@@ -279,9 +347,6 @@ def run_robust_experiment(config_path: str):
         print("結果を可視化...")
         print("="*70)
         
-        output_dir = config['data']['output_dir']
-        os.makedirs(output_dir, exist_ok=True)
-        
         show_plots = config['visualization']['show_plots']
         
         if 'box_plots' in config['visualization']['plots']:
@@ -306,8 +371,7 @@ def run_robust_experiment(config_path: str):
             )
     
     # 結果の保存
-    save_results_to_file(results, stats, test_results, 
-                        config['data']['output_dir'], config)
+    save_results_to_file(results, stats, test_results, output_dir, config)
     
     print("\n" + "="*70)
     print("✅ 実験が正常に完了しました！")
@@ -318,18 +382,39 @@ def main():
     """
     メイン関数
     """
-    parser = argparse.ArgumentParser(description='Robust Experiment for Attack Link Prediction')
+    parser = argparse.ArgumentParser(
+        description='Robust Experiment for Attack Link Prediction',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  # YAML設定ファイルの実験IDを使用
+  python src/experiments/run_robust_experiment.py
+  
+  # コマンドライン引数で実験IDを指定
+  python src/experiments/run_robust_experiment.py --experiment-id exp001
+  
+  # 設定ファイルと実験IDを両方指定
+  python src/experiments/run_robust_experiment.py --config my_config.yaml --experiment-id exp002
+        """
+    )
     parser.add_argument(
         '--config',
         type=str,
         default='config/robust_experiment.yaml',
-        help='Path to configuration file'
+        help='Path to configuration file (default: config/robust_experiment.yaml)'
+    )
+    parser.add_argument(
+        '--experiment-id',
+        type=str,
+        default=None,
+        dest='experiment_id',
+        help='Experiment ID for organizing results (overrides YAML config)'
     )
     
     args = parser.parse_args()
     
     # 実験実行
-    run_robust_experiment(args.config)
+    run_robust_experiment(args.config, args)
 
 
 if __name__ == '__main__':

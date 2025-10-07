@@ -5,7 +5,8 @@
 # データ設定
 data:
   input_graph: "../data/output/aba_graph_room_combined.pkl"
-  output_dir: "../data/training_results"
+  base_output_dir: "../data/training_results"
+  experiment_id: null  # 実験ID（nullの場合はタイムスタンプで自動生成、コマンドライン引数で上書き可能）
   seed: 42
 
 # ネガティブサンプリング設定

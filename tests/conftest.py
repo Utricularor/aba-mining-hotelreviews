@@ -129,7 +129,9 @@ def mock_config():
     return {
         'data': {
             'input_graph': 'data/output/aba_graph_room_combined.pkl',
-            'output_dir': 'data/training_results',
+            'base_output_dir': 'data/training_results',
+            'experiment_id': 'test_experiment',
+            'output_dir': 'data/training_results/test_experiment',  # テスト用の固定パス
             'seed': 42
         },
         'negative_sampling': {
