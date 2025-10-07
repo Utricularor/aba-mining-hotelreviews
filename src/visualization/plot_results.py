@@ -11,6 +11,32 @@ import os
 from typing import Dict, List, Any
 
 
+def convert_to_serializable(obj):
+    """
+    numpy型をJSON serializable な型に変換
+    
+    Args:
+        obj: 変換する対象オブジェクト
+    
+    Returns:
+        JSON serializable なオブジェクト
+    """
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(item) for item in obj]
+    else:
+        return obj
+
+
 def calculate_statistics(results: Dict[str, Dict[str, List[float]]]) -> Dict:
     """
     結果の統計量を計算
@@ -393,7 +419,7 @@ def save_results_to_file(results: Dict, stats: Dict, test_results: Dict,
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # 結果をJSON形式で保存
+    # 結果をJSON形式で保存（numpy型を変換）
     results_summary = {
         'experiment_type': 'robust_cross_validation',
         'config': config,
@@ -401,6 +427,9 @@ def save_results_to_file(results: Dict, stats: Dict, test_results: Dict,
         'statistics': stats,
         'statistical_tests': test_results
     }
+    
+    # numpy型をPython型に変換
+    results_summary = convert_to_serializable(results_summary)
     
     output_file = os.path.join(output_dir, 'experiment_results.json')
     with open(output_file, 'w', encoding='utf-8') as f:

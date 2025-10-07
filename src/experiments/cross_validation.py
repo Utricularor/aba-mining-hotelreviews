@@ -200,44 +200,52 @@ def run_cross_validation(
                     train_subset = train_dataset
                     val_subset = test_dataset
                 
-                # データローダー
+                # データローダー（型を明示的に変換）
                 train_loader = DataLoader(
                     train_subset,
-                    batch_size=bert_config['batch_size'],
+                    batch_size=int(bert_config['batch_size']),
                     shuffle=True
                 )
                 val_loader = DataLoader(
                     val_subset,
-                    batch_size=bert_config['val_batch_size'],
+                    batch_size=int(bert_config['val_batch_size']),
                     shuffle=False
                 )
                 test_loader = DataLoader(
                     test_dataset,
-                    batch_size=bert_config['val_batch_size'],
+                    batch_size=int(bert_config['val_batch_size']),
                     shuffle=False
                 )
                 
-                # モデル初期化
+                # モデル初期化（型を明示的に変換）
                 bert_model = ImprovedBERTLinkPredictor(
                     model_name=bert_config['model_name'],
-                    dropout=bert_config['dropout'],
-                    max_length=bert_config['max_length'],
-                    freeze_bert=bert_config['freeze_bert'],
+                    dropout=float(bert_config['dropout']),
+                    max_length=int(bert_config['max_length']),
+                    freeze_bert=bool(bert_config['freeze_bert']),
                     device=device
                 )
                 
-                # 学習
+                # 学習（型を明示的に変換）
+                scheduler_config = None
+                if bert_config.get('scheduler'):
+                    scheduler_config = {
+                        'type': bert_config['scheduler']['type'],
+                        'step_size': int(bert_config['scheduler']['step_size']),
+                        'gamma': float(bert_config['scheduler']['gamma'])
+                    }
+                
                 training_info = train_bert_model(
                     bert_model,
                     train_loader,
                     val_loader,
-                    num_epochs=bert_config['num_epochs'],
-                    lr=bert_config['learning_rate'],
+                    num_epochs=int(bert_config['num_epochs']),
+                    lr=float(bert_config['learning_rate']),
                     device=device,
                     model_name=f"Improved BERT (Fold {fold_idx+1})",
-                    early_stopping_patience=bert_config.get('early_stopping_patience', 5),
+                    early_stopping_patience=int(bert_config.get('early_stopping_patience', 5)),
                     verbose=True,
-                    scheduler_config=bert_config.get('scheduler')
+                    scheduler_config=scheduler_config
                 )
                 
                 # 評価
@@ -282,44 +290,52 @@ def run_cross_validation(
                     train_subset = train_dataset
                     val_subset = test_dataset
                 
-                # データローダー
+                # データローダー（型を明示的に変換）
                 train_loader = DataLoader(
                     train_subset,
-                    batch_size=bert_config['batch_size'],
+                    batch_size=int(bert_config['batch_size']),
                     shuffle=True
                 )
                 val_loader = DataLoader(
                     val_subset,
-                    batch_size=bert_config['val_batch_size'],
+                    batch_size=int(bert_config['val_batch_size']),
                     shuffle=False
                 )
                 test_loader = DataLoader(
                     test_dataset,
-                    batch_size=bert_config['val_batch_size'],
+                    batch_size=int(bert_config['val_batch_size']),
                     shuffle=False
                 )
                 
-                # モデル初期化
+                # モデル初期化（型を明示的に変換）
                 bert_model = CrossEncoderBERTLinkPredictor(
                     model_name=bert_config['model_name'],
-                    dropout=bert_config['dropout'],
-                    max_length=bert_config['max_length'],
-                    freeze_bert=bert_config['freeze_bert'],
+                    dropout=float(bert_config['dropout']),
+                    max_length=int(bert_config['max_length']),
+                    freeze_bert=bool(bert_config['freeze_bert']),
                     device=device
                 )
                 
-                # 学習
+                # 学習（型を明示的に変換）
+                scheduler_config = None
+                if bert_config.get('scheduler'):
+                    scheduler_config = {
+                        'type': bert_config['scheduler']['type'],
+                        'step_size': int(bert_config['scheduler']['step_size']),
+                        'gamma': float(bert_config['scheduler']['gamma'])
+                    }
+                
                 training_info = train_bert_model(
                     bert_model,
                     train_loader,
                     val_loader,
-                    num_epochs=bert_config['num_epochs'],
-                    lr=bert_config['learning_rate'],
+                    num_epochs=int(bert_config['num_epochs']),
+                    lr=float(bert_config['learning_rate']),
                     device=device,
                     model_name=f"Cross-Encoder BERT (Fold {fold_idx+1})",
-                    early_stopping_patience=bert_config.get('early_stopping_patience', 5),
+                    early_stopping_patience=int(bert_config.get('early_stopping_patience', 5)),
                     verbose=True,
-                    scheduler_config=bert_config.get('scheduler')
+                    scheduler_config=scheduler_config
                 )
                 
                 # 評価
