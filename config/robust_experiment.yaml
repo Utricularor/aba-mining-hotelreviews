@@ -21,6 +21,18 @@ negative_sampling:
     enabled: true
     ratio: 0.3
 
+# 対照学習設定
+contrastive_learning:
+  enabled: true  # 対照学習の有効化
+  hidden_dim: 256  # 隠れ層次元
+  output_dim: 128  # 出力埋め込み次元（RGCNの入力次元と合わせる）
+  temperature: 0.07  # 温度パラメータ
+  dropout: 0.1  # ドロップアウト率
+  num_epochs: 50  # 事前学習エポック数
+  learning_rate: 0.001  # 学習率
+  batch_size: 128  # バッチサイズ（ペア数）
+  evaluate_quality: true  # 埋め込み品質評価の実行
+
 # Cross-validation設定
 cross_validation:
   n_folds: 5

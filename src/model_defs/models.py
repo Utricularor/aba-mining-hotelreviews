@@ -304,3 +304,97 @@ class CrossEncoderBERTLinkPredictor(nn.Module):
         # 分類
         logits = self.classifier(cls_output)
         return logits.squeeze(-1)
+
+
+# =============================================================================
+# New Named Model Classes (CamelCase as requested)
+# =============================================================================
+
+class FreezedBertRgcnMlp(AttackLinkPredictor):
+    """
+    Freezed-BERT + R-GCN + MLP に相当。
+    - 本クラスは既存の AttackLinkPredictor と同等の振る舞いを提供します。
+    - BERT初期埋め込みはパイプライン側で生成し、入力特徴として利用します。
+    """
+    pass
+
+
+class FreezedBertMlp(ImprovedBERTLinkPredictor):
+    """固定BERT + MLP。"""
+    def __init__(self, model_name='google-bert/bert-base-uncased', dropout=0.3, max_length=128, device='cpu'):
+        super(FreezedBertMlp, self).__init__(
+            model_name=model_name,
+            dropout=dropout,
+            max_length=max_length,
+            freeze_bert=True,
+            device=device
+        )
+
+
+class FinetunedBertMlp(ImprovedBERTLinkPredictor):
+    """BERT微調整あり + MLP。"""
+    def __init__(self, model_name='google-bert/bert-base-uncased', dropout=0.3, max_length=128, device='cpu'):
+        super(FinetunedBertMlp, self).__init__(
+            model_name=model_name,
+            dropout=dropout,
+            max_length=max_length,
+            freeze_bert=False,
+            device=device
+        )
+
+
+class FinetunedBertCosSim(nn.Module):
+    """
+    BERTを微調整し、ノードペアの埋め込みのコサイン類似度をスコア化するモデル。
+    - 出力はロジット（BCEWithLogitsLossに入力可能）として返すため、
+      正規化コサインに学習可能スケールを掛けた値をロジットとみなす。
+    """
+    def __init__(self, model_name='google-bert/bert-base-uncased', max_length=128, device='cpu'):
+        super(FinetunedBertCosSim, self).__init__()
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers library is required for BERT models")
+        self.model_name = model_name
+        self.max_length = max_length
+        self.device = device
+
+        self.bert = AutoModel.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # 微調整を有効にする（freezeしない）
+        for p in self.bert.parameters():
+            p.requires_grad = True
+
+        # 類似度のスケール（学習可能）
+        self.logit_scale = nn.Parameter(torch.tensor(10.0))
+
+    def encode(self, texts):
+        inputs = self.tokenizer(texts, padding=True, truncation=True, max_length=self.max_length, return_tensors='pt')
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        outputs = self.bert(**inputs)
+        cls = outputs.last_hidden_state[:, 0]
+        # 単位ベクトル化
+        cls = torch.nn.functional.normalize(cls, p=2, dim=-1)
+        return cls
+
+    def forward(self, assumption_texts, proposition_texts):
+        a = self.encode(assumption_texts)
+        b = self.encode(proposition_texts)
+        # コサイン類似度（[-1,1]）
+        cos = (a * b).sum(dim=-1)
+        # ロジットに変換（スケール）
+        logits = self.logit_scale * cos
+        return logits
+
+
+class TfidfLr(TFIDFLogisticRegressionBaseline):
+    """TF-IDF + Logistic Regression（名称整備）。"""
+    pass
+
+
+class Random(nn.Module):
+    """ランダムベースライン（名称整備）。"""
+    def __init__(self):
+        super().__init__()
+        self._impl = RandomBaseline()
+
+    def predict(self, edge_pairs):
+        return self._impl.predict(edge_pairs)

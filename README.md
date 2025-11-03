@@ -134,6 +134,29 @@ python src/experiments/run_robust_experiment.py --experiment-id exp001
 python src/experiments/run_robust_experiment.py --config my_config.yaml --experiment-id exp002
 ```
 
+### Named Models Runner（6モデル固定の比較）
+
+以下の6モデルを固定セットで5-fold CV比較するランナーを追加しています:
+
+- FreezedBertRgcnMlp
+- FreezedBertMlp
+- FinetunedBertMlp
+- FinetunedBertCosSim
+- TfidfLr
+- Random
+
+実行例:
+
+```
+python src/experiments/run_named_models.py \
+  --config config/robust_experiment.yaml \
+  --experiment-id exp_baselines
+```
+
+出力は `data/training_results/<experiment_id>_named_models/` に保存され、
+各種プロット（box_plots.png / bar_charts.png / comprehensive_analysis.png）と
+`experiment_results.json` が生成されます。
+
 ### 実験IDの指定方法
 
 実験IDは3つの方法で指定できます（優先順位順）：

@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 from datetime import datetime
+from typing import Dict, List, Tuple
 
 # プロジェクトルートをパスに追加
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,6 +34,10 @@ from src.visualization.plot_results import (
     plot_comprehensive_analysis,
     display_results_table,
     save_results_to_file
+)
+from src.contrastive_learning import (
+    pretrain_embeddings_with_contrastive_learning,
+    evaluate_embedding_quality
 )
 
 
@@ -257,6 +262,77 @@ def generate_negatives(original_graph, all_nodes, attack_edges,
     return all_negatives
 
 
+def apply_contrastive_learning(
+    node_embeddings: Dict,
+    attack_edges: List[Tuple],
+    all_negatives: List[Tuple],
+    node_to_idx: Dict,
+    config: Dict,
+    output_dir: str,
+    device: str = 'cpu'
+):
+    """
+    対照学習による埋め込みの事前学習
+    
+    Args:
+        node_embeddings: 初期BERT埋め込み
+        attack_edges: Attack関係のエッジ
+        all_negatives: ネガティブサンプル
+        node_to_idx: ノードインデックスマッピング
+        config: 設定辞書
+        output_dir: 出力ディレクトリ
+        device: 計算デバイス
+    
+    Returns:
+        optimized_embeddings: 最適化された埋め込み
+        history: 学習履歴
+    """
+    contrastive_config = config.get('contrastive_learning', {})
+    
+    if not contrastive_config.get('enabled', False):
+        print("\n⚠️  対照学習は無効化されています（元の埋め込みを使用）")
+        return node_embeddings, None
+    
+    print("\n" + "="*70)
+    print("🎯 対照学習による埋め込み最適化を開始...")
+    print("="*70)
+    
+    # 対照学習の実行
+    optimized_embeddings, history = pretrain_embeddings_with_contrastive_learning(
+        initial_embeddings=node_embeddings,
+        attack_edges=attack_edges,
+        non_attack_edges=all_negatives,
+        node_to_idx=node_to_idx,
+        config=config,
+        device=device,
+        verbose=True,
+        output_dir=output_dir,
+        seed=config.get('data', {}).get('seed', None),
+        deterministic=True,
+        save_artifacts=True
+    )
+    
+    # 埋め込み品質評価
+    if contrastive_config.get('evaluate_quality', True):
+        quality_results = evaluate_embedding_quality(
+            embeddings=optimized_embeddings,
+            attack_edges=attack_edges,
+            non_attack_edges=all_negatives,
+            node_to_idx=node_to_idx,
+            output_dir=output_dir,
+            verbose=True
+        )
+        
+        # 評価結果を保存
+        import json
+        quality_path = os.path.join(output_dir, 'embedding_quality.json')
+        with open(quality_path, 'w', encoding='utf-8') as f:
+            json.dump(quality_results, f, indent=2, ensure_ascii=False)
+        print(f"\n💾 埋め込み品質評価結果を保存: {quality_path}")
+    
+    return optimized_embeddings, history
+
+
 def run_robust_experiment(config_path: str, args=None):
     """
     Robust experimentを実行
@@ -298,6 +374,25 @@ def run_robust_experiment(config_path: str, args=None):
         original_graph, all_nodes, attack_edges,
         embedding_matrix, node_to_idx, inference_graph, config
     )
+    
+    # 対照学習による埋め込み最適化
+    optimized_embeddings, contrastive_history = apply_contrastive_learning(
+        node_embeddings,
+        attack_edges,
+        all_negatives,
+        node_to_idx,
+        config,
+        output_dir,
+        device=str(device)
+    )
+    
+    # 最適化された埋め込みで行列を更新
+    if config.get('contrastive_learning', {}).get('enabled', False):
+        embedding_matrix = np.array([optimized_embeddings[node] for node in all_nodes])
+        x = torch.tensor(embedding_matrix, dtype=torch.float32)
+        data.x = x
+        print(f"\n✅ 対照学習後の埋め込みでグラフデータを更新しました")
+        print(f"   更新後の埋め込み次元: {embedding_matrix.shape}")
     
     # Cross-validation分割
     print("\n" + "="*70)
