@@ -6,10 +6,11 @@ from make_graph_dataset import build_aba_graph
 
 def save_graph_pickle(graph: nx.DiGraph, filename: str):
     """グラフをPickle形式で保存"""
-    # outputディレクトリが存在しない場合は作成
-    os.makedirs("data/output", exist_ok=True)
-    
-    filepath = f"data/output/{filename}.pkl"
+    # プロジェクトルートを推定し、出力パスを絶対指定
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    output_dir = os.path.join(project_root, "data", "output")
+    os.makedirs(output_dir, exist_ok=True)
+    filepath = os.path.join(output_dir, f"{filename}.pkl")
     
     with open(filepath, 'wb') as f:
         pickle.dump(graph, f)
@@ -25,34 +26,34 @@ def save_graph_pickle(graph: nx.DiGraph, filename: str):
     return filepath
 
 if __name__ == "__main__":
+    # プロジェクトルートを推定
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     # データ読み込み
-    aba_file_path = "data/input/Original ABA Dataset for Version 2 [June 15] - 1. hotel in Larnaca-Cyprus - Topic.csv"
-    cols = ['ReviewID', 'Title', 'Topic', 'Pos/Neg', 'Claim', 'Head',
-    'Body 1', 'Body 2', 'Body 3', 'Body 4', 'Body 5', 'Body 6', 'Body 7',
-    'Body 8', 'Body 9', 'Body 10', 'Body 11', 'Body 12', 'Body 13',
-    'Body 14', 'Body 15', 'Cont. Body 1', 'Cont. Body 2', 'Cont. Body 3',
-    'Cont. Body 4', 'Cont. Body 5', 'Cont. Body 6', 'Cont. Body 7', 
-    'Cont. Body 8', 'Cont. Body 9', 'Cont. Body 10', 'Cont. Body 11',
-    'Cont. Body 12', 'Cont. Body 13', 'Cont. Body 14', 'Cont. Body 15',]
-    aba = pd.read_csv(aba_file_path, usecols=cols)
-    aba_room = aba[aba['Topic'] == 'Room']
+    aba_file_path = os.path.join(project_root, "data/input/Original ABA Dataset for Version 2 [June 15] - 1. hotel in Larnaca-Cyprus - Topic.csv")
+
+    # Room/Staff の4CSVを対象（存在するもののみ使用）
+    room_contp_bodyn = os.path.join(project_root, "data/output/Silver_Room_ContP_BodyN_4omini.csv")
+    room_contn_bodyp = os.path.join(project_root, "data/output/Silver_Room_ContN_BodyP_4omini.csv")
+    staff_contp_bodyn = os.path.join(project_root, "data/output/Silver_Staff_ContP_BodyN_4omini.csv")
+    staff_contn_bodyp = os.path.join(project_root, "data/output/Silver_Staff_ContN_BodyP_4omini.csv")
     
-    # 2つのcontraファイルを読み込み
-    contra_file_path_1 = "data/output/Silver_Room_ContP_BodyN_4omini.csv"
-    contra_file_path_2 = "data/output/Silver_Room_ContN_BodyP_4omini.csv"
-    
-    print(f"📂 Contraファイル1を読み込み: {contra_file_path_1}")
-    contra_1 = pd.read_csv(contra_file_path_1)
-    print(f"  - データ数: {len(contra_1)} 行")
-    
-    print(f"📂 Contraファイル2を読み込み: {contra_file_path_2}")
-    contra_2 = pd.read_csv(contra_file_path_2)
-    print(f"  - データ数: {len(contra_2)} 行")
-    
-    # 2つのcontraデータを統合
-    contra_combined = pd.concat([contra_1, contra_2], ignore_index=True)
-    print(f"📊 統合後のデータ数: {len(contra_combined)} 行")
-    
+    contra_paths = [room_contp_bodyn, room_contn_bodyp, staff_contp_bodyn, staff_contn_bodyp]
+    contra_list = []
+    for p in contra_paths:
+        if os.path.exists(p):
+            print(f"📂 Contraファイルを読み込み: {p}")
+            df = pd.read_csv(p)
+            print(f"  - データ数: {len(df)} 行")
+            contra_list.append(df)
+        else:
+            print(f"⚠️ Contraファイルが見つかりませんでした: {p}")
+
+    if not contra_list:
+        raise FileNotFoundError("対象のContra CSVが1つも読み込めませんでした。パスを確認してください。")
+
+    # 複数CSVを結合
+    contra_combined = pd.concat(contra_list, ignore_index=True) if len(contra_list) > 1 else contra_list[0]
+
     # 重複チェック（もしあれば）
     duplicates = contra_combined.duplicated().sum()
     if duplicates > 0:
@@ -63,9 +64,39 @@ if __name__ == "__main__":
         print("✓ 重複データなし")
 
     # グラフ構築
-    aba_graph_room = build_aba_graph(aba_room, contra_combined)
+    if os.path.exists(aba_file_path):
+        # 通常フロー: 元ABAデータ（全Topic） + 対立CSVからグラフ生成
+        cols = ['ReviewID', 'Title', 'Topic', 'Pos/Neg', 'Claim', 'Head',
+        'Body 1', 'Body 2', 'Body 3', 'Body 4', 'Body 5', 'Body 6', 'Body 7',
+        'Body 8', 'Body 9', 'Body 10', 'Body 11', 'Body 12', 'Body 13',
+        'Body 14', 'Body 15', 'Cont. Body 1', 'Cont. Body 2', 'Cont. Body 3',
+        'Cont. Body 4', 'Cont. Body 5', 'Cont. Body 6', 'Cont. Body 7', 
+        'Cont. Body 8', 'Cont. Body 9', 'Cont. Body 10', 'Cont. Body 11',
+        'Cont. Body 12', 'Cont. Body 13', 'Cont. Body 14', 'Cont. Body 15',]
+        aba = pd.read_csv(aba_file_path, usecols=cols)
+        # Topicによるフィルタは行わず、Room/Staffを含む全行を対象
+        aba_all = aba
+        aba_graph_room_staff = build_aba_graph(aba_all, contra_combined)
+    else:
+        # フォールバック: 対立CSVのみから最小限のグラフ（attackエッジのみ）を構築
+        print(f"⚠️ 元ABAデータが見つかりませんでした（{aba_file_path}）。対立CSVのみから最小限のグラフを構築します。")
+        g = nx.DiGraph()
+        has_is_contrary = 'isContrary' in contra_combined.columns
+        for _, r in contra_combined.iterrows():
+            a = r.get('Assumption')
+            p = r.get('Proposition')
+            if pd.isna(a) or pd.isna(p):
+                continue
+            is_contrary = bool(r['isContrary']) if has_is_contrary else True
+            if not is_contrary:
+                continue
+            g.add_node(a)
+            g.add_node(p)
+            g.add_edge(p, a, relation="attack")
+        print(f"  構築結果: ノード数={g.number_of_nodes()}, attackエッジ数={g.number_of_edges()}")
+        aba_graph_room_staff = g
 
     # グラフ保存（統合データを反映したファイル名）
-    saved_file = save_graph_pickle(aba_graph_room, "aba_graph_staff_combined")
+    saved_file = save_graph_pickle(aba_graph_room_staff, "aba_graph_room_staff_combined")
     print(f"\n保存完了: {saved_file}")
-    print(f"📈 統合されたcontraデータを使用したグラフが保存されました")
+    print(f"📈 統合されたRoom/Staffのcontraデータを使用したグラフが保存されました")

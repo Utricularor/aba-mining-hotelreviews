@@ -313,10 +313,22 @@ class CrossEncoderBERTLinkPredictor(nn.Module):
 class FreezedBertRgcnMlp(AttackLinkPredictor):
     """
     Freezed-BERT + R-GCN + MLP に相当。
-    - 本クラスは既存の AttackLinkPredictor と同等の振る舞いを提供します。
     - BERT初期埋め込みはパイプライン側で生成し、入力特徴として利用します。
+    - link predictor の dropout をハイパラから指定可能にします。
     """
-    pass
+    def __init__(self, input_dim, hidden_dim=128, num_layers=2, num_relations=1, dropout_link: float = 0.5):
+        super().__init__(input_dim=input_dim, hidden_dim=hidden_dim, num_layers=num_layers, num_relations=num_relations)
+        # 既定のlink_predictorを上書きしてdropoutを可変に
+        self.link_predictor = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout_link),
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout_link),
+            nn.Linear(64, 1),
+            nn.Sigmoid()
+        )
 
 
 class FreezedBertMlp(ImprovedBERTLinkPredictor):
