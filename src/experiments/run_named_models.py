@@ -73,13 +73,9 @@ def run_named_models_experiment(config_path: str, args=None):
 
     # 実験ID（デフォルト名を補助）
     experiment_id = determine_experiment_id(config, args)
-    if experiment_id is None or experiment_id.startswith("exp_"):
-        experiment_id = experiment_id or ""
-    # 名前の明示
+    # 明示指定があればサフィックスを付けずにそのまま使用。未指定時のみ既定名を用いる
     if not experiment_id:
         experiment_id = "named_models"
-    else:
-        experiment_id = f"{experiment_id}_named_models"
 
     # 出力先
     output_dir = setup_output_directory(config, experiment_id)
@@ -89,6 +85,9 @@ def run_named_models_experiment(config_path: str, args=None):
     # デバイス
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
     print(f"\n💻 使用デバイス: {device}")
+    # DataLoader最適化
+    dl_workers = int(config.get('compute', {}).get('num_workers', 0))
+    pin_mem = (str(device) == 'cuda')
 
     # データ準備（BERTノード埋め込みを生成し特徴に使用）
     (
@@ -284,8 +283,9 @@ def run_named_models_experiment(config_path: str, args=None):
                     model_name="FreezedBertRgcnMlp(best)",
                     verbose=bool(rgcn_cfg.get('verbose', True)),
                     validation_edges=rgcn_val_edges,
+                    device=str(device)
                 )
-                metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx)
+                metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx, device=str(device))
                 key = (
                     f"FreezedBertRgcnMlp[hd={selected_rgcn['hidden_dim']},"
                     f"layers={selected_rgcn['num_layers']},dr={selected_rgcn['dropout_link']},"
@@ -336,9 +336,10 @@ def run_named_models_experiment(config_path: str, args=None):
                         lr=float(lr_v),
                         model_name="FreezedBertRgcnMlp(sweep)",
                         verbose=bool(rgcn_cfg.get('verbose', True)),
-                        validation_edges=rgcn_val_edges,
+                    validation_edges=rgcn_val_edges,
+                    device=str(device)
                     )
-                    metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx)
+                    metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx, device=str(device))
                     key = f"FreezedBertRgcnMlp[hd={hd_v},layers={nl_v},dr={dr_v},lr={lr_v},ep={ne_v}]"
                     ensure_results_key(key)
                     for k, v in metrics.items():
@@ -363,8 +364,9 @@ def run_named_models_experiment(config_path: str, args=None):
                     model_name="FreezedBertRgcnMlp",
                     verbose=bool(rgcn_cfg.get('verbose', True)),
                     validation_edges=rgcn_val_edges,
+                    device=str(device)
                 )
-                metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx)
+                metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx, device=str(device))
                 for k, v in metrics.items():
                     results['FreezedBertRgcnMlp'][k].append(v)
                 print(f"結果: Acc={metrics['accuracy']:.3f}, F1={metrics['f1']:.3f}, AUC={metrics['auc']:.3f}")
@@ -407,9 +409,9 @@ def run_named_models_experiment(config_path: str, args=None):
 
                 print("\n🤖 FreezedBertMlp スイープ開始: 試行数=\n" + str(len(combos)))
                 for (lr_v, do_v, ml_v, tr_bs_v, va_bs_v, ne_v, sch_v) in combos:
-                    dl_tr = DataLoader(tr_subset, batch_size=int(tr_bs_v), shuffle=True)
-                    dl_va = DataLoader(va_subset, batch_size=int(va_bs_v), shuffle=False)
-                    dl_te = DataLoader(ds_test, batch_size=int(va_bs_v), shuffle=False)
+                    dl_tr = DataLoader(tr_subset, batch_size=int(tr_bs_v), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                    dl_va = DataLoader(va_subset, batch_size=int(va_bs_v), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                    dl_te = DataLoader(ds_test, batch_size=int(va_bs_v), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
 
                     model_trial = FreezedBertMlp(
                         model_name=bert_cfg['model_name'],
@@ -446,9 +448,9 @@ def run_named_models_experiment(config_path: str, args=None):
                     print(f"結果[{variant_key}]: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
             else:
                 print("\n🤖 FreezedBertMlp を学習中...")
-                dl_tr = DataLoader(tr_subset, batch_size=int(bert_cfg['batch_size']), shuffle=True)
-                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False)
-                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False)
+                dl_tr = DataLoader(tr_subset, batch_size=int(bert_cfg['batch_size']), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
                 model_freezed = FreezedBertMlp(
                     model_name=bert_cfg['model_name'],
                     dropout=float(bert_cfg['dropout']),
@@ -494,9 +496,9 @@ def run_named_models_experiment(config_path: str, args=None):
             # best_from_results が指定されている場合は単一設定で実行
             if selected_ftb is not None:
                 print("\n🤖 FinetunedBertMlp（best_from_results）を学習中...")
-                dl_tr = DataLoader(tr_subset, batch_size=int(selected_ftb['batch_size']), shuffle=True)
-                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False)
-                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False)
+                dl_tr = DataLoader(tr_subset, batch_size=int(selected_ftb['batch_size']), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
 
                 model_trial = FinetunedBertMlp(
                     model_name=bert_cfg['model_name'],
@@ -551,9 +553,9 @@ def run_named_models_experiment(config_path: str, args=None):
                 print(f"\n🤖 FinetunedBertMlp スイープ開始: 試行数={len(combos)}")
                 for (lr_v, do_v, ml_v, tr_bs_v, va_bs_v, ne_v, sch_v) in combos:
                     # データローダーを試行ごとに再構築
-                    dl_tr = DataLoader(tr_subset, batch_size=int(tr_bs_v), shuffle=True)
-                    dl_va = DataLoader(va_subset, batch_size=int(va_bs_v), shuffle=False)
-                    dl_te = DataLoader(ds_test, batch_size=int(va_bs_v), shuffle=False)
+                    dl_tr = DataLoader(tr_subset, batch_size=int(tr_bs_v), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                    dl_va = DataLoader(va_subset, batch_size=int(va_bs_v), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                    dl_te = DataLoader(ds_test, batch_size=int(va_bs_v), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
 
                     # モデル
                     model_trial = FinetunedBertMlp(
@@ -593,9 +595,9 @@ def run_named_models_experiment(config_path: str, args=None):
             else:
                 print("\n🤖 FinetunedBertMlp を学習中...")
                 # DataLoader（設定のバッチサイズ）
-                dl_tr = DataLoader(tr_subset, batch_size=int(bert_cfg['batch_size']), shuffle=True)
-                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False)
-                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False)
+                dl_tr = DataLoader(tr_subset, batch_size=int(bert_cfg['batch_size']), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
 
                 model_finetuned_mlp = FinetunedBertMlp(
                     model_name=bert_cfg['model_name'],
@@ -632,38 +634,172 @@ def run_named_models_experiment(config_path: str, args=None):
 
         # 4) FinetunedBertCosSim（シアミーズ + コサインロジット）
         if 'FinetunedBertCosSim' in model_names:
-            print("\n🤖 FinetunedBertCosSim を学習中...")
-            model_cos = FinetunedBertCosSim(
-                model_name=bert_cfg['model_name'],
-                max_length=int(bert_cfg['max_length']),
-                device=str(device),
-            )
-            _ = train_bert_model(
-                model_cos,
-                dl_tr,
-                dl_va,
-                num_epochs=int(bert_cfg['num_epochs']),
-                lr=float(bert_cfg['learning_rate']),
-                device=str(device),
-                model_name=f"FinetunedBertCosSim (Fold {fold_idx+1})",
-                early_stopping_patience=int(bert_cfg.get('early_stopping_patience', 5)),
-                verbose=True,
-                scheduler_config=sched,
-            )
-            met, _ = evaluate_bert_model(model_cos, dl_te, device=str(device))
-            for k, v in met.items():
-                results['FinetunedBertCosSim'][k].append(v)
-            print(f"結果: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
+            # このモデル用のデータセット/分割を準備（独立に準備して未定義変数を排除）
+            ds_train = ABADataset(train_edges, all_nodes)
+            ds_test = ABADataset(test_edges, all_nodes)
+            tr_size = int((1 - val_split_ratio) * len(ds_train))
+            va_size = len(ds_train) - tr_size
+            if tr_size >= 1 and va_size >= 1:
+                tr_subset, va_subset = torch.utils.data.random_split(ds_train, [tr_size, va_size])
+            else:
+                tr_subset, va_subset = ds_train, ds_test
+
+            # スイープ設定がある場合はグリッド/ランダム探索を実行
+            if args and hasattr(args, 'sweep_config') and args.sweep_config and (not args.only_model or args.only_model == 'FinetunedBertCosSim'):
+                with open(args.sweep_config, 'r', encoding='utf-8') as f:
+                    sweep = json.load(f)
+
+                lrs = sweep.get('learning_rate', [float(bert_cfg['learning_rate'])])
+                max_lengths = sweep.get('max_length', [int(bert_cfg['max_length'])])
+                train_bsz = sweep.get('batch_size', [int(bert_cfg['batch_size'])])
+                val_bsz = sweep.get('val_batch_size', [int(bert_cfg['val_batch_size'])])
+                num_epochs_list = sweep.get('num_epochs', [int(bert_cfg['num_epochs'])])
+                schedulers = sweep.get('scheduler', [bert_cfg.get('scheduler', None)])
+
+                combos = list(itertools.product(lrs, max_lengths, train_bsz, val_bsz, num_epochs_list, schedulers))
+                strategy = getattr(args, 'search_strategy', 'grid')
+                max_trials = getattr(args, 'max_trials', None)
+                if strategy == 'random':
+                    _random.shuffle(combos)
+                if max_trials is not None:
+                    try:
+                        max_trials = int(max_trials)
+                        combos = combos[:max_trials]
+                    except Exception:
+                        pass
+
+                print(f"\n🤖 FinetunedBertCosSim スイープ開始: 試行数={len(combos)}")
+                for (lr_v, ml_v, tr_bs_v, va_bs_v, ne_v, sch_v) in combos:
+                    dl_tr = DataLoader(tr_subset, batch_size=int(tr_bs_v), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                    dl_va = DataLoader(va_subset, batch_size=int(va_bs_v), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                    dl_te = DataLoader(ds_test, batch_size=int(va_bs_v), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+
+                    model_trial = FinetunedBertCosSim(
+                        model_name=bert_cfg['model_name'],
+                        max_length=int(ml_v),
+                        device=str(device),
+                    )
+
+                    sched_conf = None
+                    if sch_v and isinstance(sch_v, dict) and sch_v.get('type', '').lower() == 'steplr':
+                        sched_conf = {
+                            'type': 'StepLR',
+                            'step_size': int(sch_v.get('step_size', 2)),
+                            'gamma': float(sch_v.get('gamma', 0.7)),
+                        }
+
+                    _ = train_bert_model(
+                        model_trial,
+                        dl_tr,
+                        dl_va,
+                        num_epochs=int(ne_v),
+                        lr=float(lr_v),
+                        device=str(device),
+                        model_name=f"FinetunedBertCosSim (sweep Fold {fold_idx+1})",
+                        early_stopping_patience=int(bert_cfg.get('early_stopping_patience', 5)),
+                        verbose=True,
+                        scheduler_config=sched_conf,
+                    )
+                    met, _ = evaluate_bert_model(model_trial, dl_te, device=str(device))
+                    variant_key = f"FinetunedBertCosSim[lr={lr_v},ml={ml_v},bs={tr_bs_v}]"
+                    ensure_results_key(variant_key)
+                    for k, v in met.items():
+                        results[variant_key][k].append(v)
+                    print(f"結果[{variant_key}]: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
+            else:
+                print("\n🤖 FinetunedBertCosSim を学習中...")
+                dl_tr = DataLoader(tr_subset, batch_size=int(bert_cfg['batch_size']), shuffle=True, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_va = DataLoader(va_subset, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                dl_te = DataLoader(ds_test, batch_size=int(bert_cfg['val_batch_size']), shuffle=False, num_workers=dl_workers, pin_memory=pin_mem)
+                sched = None
+                if bert_cfg.get('scheduler'):
+                    sched = {
+                        'type': bert_cfg['scheduler']['type'],
+                        'step_size': int(bert_cfg['scheduler']['step_size']),
+                        'gamma': float(bert_cfg['scheduler']['gamma']),
+                    }
+                model_cos = FinetunedBertCosSim(
+                    model_name=bert_cfg['model_name'],
+                    max_length=int(bert_cfg['max_length']),
+                    device=str(device),
+                )
+                _ = train_bert_model(
+                    model_cos,
+                    dl_tr,
+                    dl_va,
+                    num_epochs=int(bert_cfg['num_epochs']),
+                    lr=float(bert_cfg['learning_rate']),
+                    device=str(device),
+                    model_name=f"FinetunedBertCosSim (Fold {fold_idx+1})",
+                    early_stopping_patience=int(bert_cfg.get('early_stopping_patience', 5)),
+                    verbose=True,
+                    scheduler_config=sched,
+                )
+                met, _ = evaluate_bert_model(model_cos, dl_te, device=str(device))
+                for k, v in met.items():
+                    results['FinetunedBertCosSim'][k].append(v)
+                print(f"結果: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
 
         # 5) TfidfLr
         if 'TfidfLr' in model_names:
-            print("\n📝 TfidfLr を学習・評価中...")
-            tfidf = TfidfLr()
-            tfidf.fit(train_edges, all_nodes)
-            met, _ = evaluate_baseline(tfidf, test_edges)
-            for k, v in met.items():
-                results['TfidfLr'][k].append(v)
-            print(f"結果: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
+            # スイープ設定がある場合はグリッド/ランダム探索を実行
+            if args and hasattr(args, 'sweep_config') and args.sweep_config and (not args.only_model or args.only_model == 'TfidfLr'):
+                print("\n📝 TfidfLr スイープを開始...")
+                with open(args.sweep_config, 'r', encoding='utf-8') as f:
+                    sweep = json.load(f)
+
+                ngram_ranges = sweep.get('ngram_range', [[1, 1]])
+                max_features_list = sweep.get('max_features', [1000])
+                min_dfs = sweep.get('min_df', [1])
+                Cs = sweep.get('C', [1.0])
+                solvers = sweep.get('solver', ["liblinear"])
+                class_weights = sweep.get('class_weight', [None])
+                max_iters = sweep.get('max_iter', [200])
+
+                combos = list(itertools.product(ngram_ranges, max_features_list, min_dfs, Cs, solvers, class_weights, max_iters))
+                strategy = getattr(args, 'search_strategy', 'grid')
+                max_trials = getattr(args, 'max_trials', None)
+                if strategy == 'random':
+                    _random.shuffle(combos)
+                if max_trials is not None:
+                    try:
+                        max_trials = int(max_trials)
+                        combos = combos[:max_trials]
+                    except Exception:
+                        pass
+
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.linear_model import LogisticRegression
+
+                for (ng_v, mf_v, md_v, c_v, solver_v, cw_v, mi_v) in combos:
+                    tfidf = TfidfLr()
+                    # ベクトライザと分類器を上書き構成
+                    tfidf.vectorizer = TfidfVectorizer(
+                        max_features=int(mf_v),
+                        ngram_range=tuple(ng_v),
+                        min_df=int(md_v)
+                    )
+                    tfidf.classifier = LogisticRegression(
+                        C=float(c_v),
+                        solver=str(solver_v),
+                        class_weight=None if cw_v in [None, "null"] else str(cw_v),
+                        max_iter=int(mi_v)
+                    )
+                    tfidf.fit(train_edges, all_nodes)
+                    met, _ = evaluate_baseline(tfidf, test_edges)
+                    key = f"TfidfLr[ng={tuple(ng_v)},mf={mf_v},min_df={md_v},C={c_v},solver={solver_v},cw={cw_v},mi={mi_v}]"
+                    ensure_results_key(key)
+                    for k, v in met.items():
+                        results[key][k].append(v)
+                    print(f"結果[{key}]: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
+            else:
+                print("\n📝 TfidfLr を学習・評価中...")
+                tfidf = TfidfLr()
+                tfidf.fit(train_edges, all_nodes)
+                met, _ = evaluate_baseline(tfidf, test_edges)
+                for k, v in met.items():
+                    results['TfidfLr'][k].append(v)
+                print(f"結果: Acc={met['accuracy']:.3f}, F1={met['f1']:.3f}, AUC={met['auc']:.3f}")
 
         # 6) Random
         if 'Random' in model_names:
