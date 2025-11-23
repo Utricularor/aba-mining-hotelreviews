@@ -48,6 +48,7 @@ from src.model_defs.models import (
     FinetunedBertCosSim,
     TfidfLr,
     Random,
+    FinetunedBertRgcnMlp,
 )
 from src.model_training.train import train_model
 from src.model_training.train_bert import (
@@ -154,6 +155,7 @@ def run_named_models_experiment(config_path: str, args=None):
     # 結果入れ物（全モデルのデフォルト）
     all_models = [
         'FreezedBertRgcnMlp',
+        'FinetunedBertRgcnMlp',
         'FreezedBertMlp',
         'FinetunedBertMlp',
         'FinetunedBertCosSim',
@@ -369,6 +371,100 @@ def run_named_models_experiment(config_path: str, args=None):
                 metrics, _preds = evaluate_model(rgcn_model, data, test_edges, node_to_idx, device=str(device))
                 for k, v in metrics.items():
                     results['FreezedBertRgcnMlp'][k].append(v)
+                print(f"結果: Acc={metrics['accuracy']:.3f}, F1={metrics['f1']:.3f}, AUC={metrics['auc']:.3f}")
+
+        # 1b) FinetunedBertRgcnMlp（BERT微調整 + R-GCN）
+        if 'FinetunedBertRgcnMlp' in model_names:
+            rgcn_cfg = config['models']['rgcn']
+            # train/val split（R-GCN と同様にエッジレベルで分割）
+            train_size = int((1 - val_split_ratio) * len(train_edges))
+            shuffled = train_edges.copy()
+            import random as _random  # 局所利用（上と同様）
+            _random.shuffle(shuffled)
+            ftrgcn_train_edges = shuffled[:train_size]
+            ftrgcn_val_edges = shuffled[train_size:]
+
+            # スイープ設定がある場合はグリッド/ランダム探索
+            if args and hasattr(args, 'sweep_config') and args.sweep_config and (not args.only_model or args.only_model == 'FinetunedBertRgcnMlp'):
+                with open(args.sweep_config, 'r', encoding='utf-8') as f:
+                    sweep = json.load(f)
+
+                hidden_dims = sweep.get('hidden_dim', [int(rgcn_cfg['hidden_dim'])])
+                num_layers_list = sweep.get('num_layers', [int(rgcn_cfg['num_layers'])])
+                dropouts_link = sweep.get('dropout_link', [0.5])
+                lrs = sweep.get('learning_rate', [3e-5])
+                num_epochs_list = sweep.get('num_epochs', [int(rgcn_cfg['num_epochs'])])
+                max_lengths = sweep.get('max_length', [int(bert_cfg['max_length'])])
+
+                combos = list(itertools.product(hidden_dims, num_layers_list, dropouts_link, lrs, num_epochs_list, max_lengths))
+                strategy = getattr(args, 'search_strategy', 'grid')
+                max_trials = getattr(args, 'max_trials', None)
+                if strategy == 'random':
+                    _random.shuffle(combos)
+                if max_trials is not None:
+                    try:
+                        combos = combos[:int(max_trials)]
+                    except Exception:
+                        pass
+
+                print(f"\n🤖 FinetunedBertRgcnMlp スイープ開始: 試行数={len(combos)}")
+                for (hd_v, nl_v, dr_v, lr_v, ne_v, ml_v) in combos:
+                    model_trial = FinetunedBertRgcnMlp(
+                        all_nodes=all_nodes,
+                        model_name=bert_cfg['model_name'],
+                        max_length=int(ml_v),
+                        hidden_dim=int(hd_v),
+                        num_layers=int(nl_v),
+                        num_relations=1,
+                        dropout_link=float(dr_v),
+                    )
+                    _ = train_model(
+                        model_trial,
+                        data,
+                        ftrgcn_train_edges,
+                        node_to_idx,
+                        num_epochs=int(ne_v),
+                        lr=float(lr_v),
+                        model_name="FinetunedBertRgcnMlp(sweep)",
+                        verbose=bool(rgcn_cfg.get('verbose', True)),
+                        validation_edges=ftrgcn_val_edges,
+                        device=str(device),
+                    )
+                    metrics, _preds = evaluate_model(model_trial, data, test_edges, node_to_idx, device=str(device))
+                    key = (
+                        f"FinetunedBertRgcnMlp[hd={hd_v},layers={nl_v},dr={dr_v},"
+                        f"lr={lr_v},ep={ne_v},ml={ml_v}]"
+                    )
+                    ensure_results_key(key)
+                    for k, v in metrics.items():
+                        results[key][k].append(v)
+                    print(f"結果[{key}]: Acc={metrics['accuracy']:.3f}, F1={metrics['f1']:.3f}, AUC={metrics['auc']:.3f}")
+            else:
+                print("\n🤖 FinetunedBertRgcnMlp を学習中...")
+                model_ftrgcn = FinetunedBertRgcnMlp(
+                    all_nodes=all_nodes,
+                    model_name=bert_cfg['model_name'],
+                    max_length=int(bert_cfg['max_length']),
+                    hidden_dim=int(rgcn_cfg['hidden_dim']),
+                    num_layers=int(rgcn_cfg['num_layers']),
+                    num_relations=1,
+                    dropout_link=0.5,
+                )
+                _ = train_model(
+                    model_ftrgcn,
+                    data,
+                    ftrgcn_train_edges,
+                    node_to_idx,
+                    num_epochs=int(rgcn_cfg['num_epochs']),
+                    lr=3e-5,
+                    model_name="FinetunedBertRgcnMlp",
+                    verbose=bool(rgcn_cfg.get('verbose', True)),
+                    validation_edges=ftrgcn_val_edges,
+                    device=str(device),
+                )
+                metrics, _preds = evaluate_model(model_ftrgcn, data, test_edges, node_to_idx, device=str(device))
+                for k, v in metrics.items():
+                    results['FinetunedBertRgcnMlp'][k].append(v)
                 print(f"結果: Acc={metrics['accuracy']:.3f}, F1={metrics['f1']:.3f}, AUC={metrics['auc']:.3f}")
 
         # 2) FreezedBertMlp

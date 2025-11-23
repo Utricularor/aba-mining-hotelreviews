@@ -397,9 +397,130 @@ class FinetunedBertCosSim(nn.Module):
         return logits
 
 
+class FinetunedBertRgcnMlp(AttackLinkPredictor):
+    """
+    Finetuned-BERT + R-GCN + MLP モデル。
+
+    - ノードテキストを BERT でエンコードし、その CLS ベクトルをノード特徴とする
+    - BERT パラメータは微調整（freeze しない）
+    - R-GCN によりグラフ構造を学習し、ノードペア埋め込みを MLP で分類
+
+    AttackLinkPredictor 互換のインターフェイス:
+        forward(x, edge_index, edge_type, edge_pairs)
+    ただし x は無視され、内部で BERT 埋め込みを計算する。
+    """
+    def __init__(
+        self,
+        all_nodes,
+        model_name: str = "google-bert/bert-base-uncased",
+        max_length: int = 128,
+        hidden_dim: int = 128,
+        num_layers: int = 2,
+        num_relations: int = 1,
+        dropout_link: float = 0.5,
+    ):
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers library is required for BERT models")
+
+        # BERT 本体とトークナイザ（まだ self に登録しない）
+        model_name_local = model_name
+        max_length_local = max_length
+        all_nodes_list = list(all_nodes)
+
+        bert_model = AutoModel.from_pretrained(model_name_local)
+        tokenizer = AutoTokenizer.from_pretrained(model_name_local)
+
+        # BERT を微調整モードに（デフォルトで requires_grad=True だが明示しておく）
+        for p in bert_model.parameters():
+            p.requires_grad = True
+
+        # ノード列を一括トークナイズ
+        encoded = tokenizer(
+            all_nodes_list,
+            padding=True,
+            truncation=True,
+            max_length=max_length_local,
+            return_tensors="pt",
+        )
+
+        # AttackLinkPredictor を BERT hidden size を入力次元として初期化
+        hidden_size = bert_model.config.hidden_size
+        super().__init__(
+            input_dim=hidden_size,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            num_relations=num_relations,
+        )
+
+        # BERT 関連をモジュール属性として登録
+        self.model_name = model_name_local
+        self.max_length = max_length_local
+        self.all_nodes = all_nodes_list
+        self.bert = bert_model
+        self.tokenizer = tokenizer
+
+        # link_predictor を FreezedBertRgcnMlp と同様に dropout_link で上書き
+        self.link_predictor = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout_link),
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout_link),
+            nn.Linear(64, 1),
+            nn.Sigmoid(),
+        )
+
+        # トークナイズ済み入力をバッファとして登録（.to(device) に追従させる）
+        self.register_buffer("input_ids", encoded["input_ids"])
+        self.register_buffer("attention_mask", encoded["attention_mask"])
+
+    def _encode_nodes_with_bert(self) -> torch.Tensor:
+        """
+        全ノードを BERT でエンコードし、CLS 埋め込み行列 (num_nodes, hidden_size) を返す。
+        """
+        device = next(self.parameters()).device
+        inputs = {
+            "input_ids": self.input_ids.to(device),
+            "attention_mask": self.attention_mask.to(device),
+        }
+        outputs = self.bert(**inputs)
+        cls = outputs.last_hidden_state[:, 0]  # (num_nodes, hidden_size)
+        return cls
+
+    def forward(self, x, edge_index, edge_type, edge_pairs):
+        """
+        Args:
+            x: 既存パイプラインとの互換性のためのダミー（内部では使用しない）
+            edge_index: グラフのエッジインデックス
+            edge_type: エッジ種別（R-GCN 用）
+            edge_pairs: 学習・評価対象のノードペア（ノードインデックスのタプル列）
+        """
+        # BERT でノード埋め込みを計算
+        h = self._encode_nodes_with_bert()
+
+        # R-GCN 伝播
+        for conv in self.convs:
+            h = F.relu(conv(h, edge_index, edge_type))
+
+        # Link prediction（AttackLinkPredictor と同じ形式）
+        edge_embeddings = []
+        for u, v in edge_pairs:
+            u_emb = h[u]
+            v_emb = h[v]
+            edge_emb = torch.cat([u_emb, v_emb], dim=0)
+            edge_embeddings.append(edge_emb)
+
+        edge_embeddings = torch.stack(edge_embeddings)
+        predictions = self.link_predictor(edge_embeddings)
+        return predictions.squeeze(-1)
+
+
 class TfidfLr(TFIDFLogisticRegressionBaseline):
     """TF-IDF + Logistic Regression（名称整備）。"""
-    pass
+    def __init__(self, max_features=1000, C=1.0, ngram_range=(1, 1), solver='lbfgs', class_weight=None, **kwargs):
+        self.vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=ngram_range)
+        self.classifier = LogisticRegression(C=C, solver=solver, class_weight=class_weight)
 
 
 class Random(nn.Module):
