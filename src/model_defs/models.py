@@ -7,13 +7,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
-# BERT関連のインポート
+# BERT / LoRA 関連のインポート
 try:
     from transformers import AutoTokenizer, AutoModel
+    from peft import LoraConfig, get_peft_model, TaskType
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
-    print("Warning: transformers not available. BERT models will not work.")
+    print("Warning: transformers or peft not available. BERT-based models will not work.")
 
 class AttackLinkPredictor(nn.Module):
     def __init__(self, input_dim, hidden_dim=128, num_layers=2, num_relations=1):
@@ -420,7 +421,7 @@ class FinetunedBertRgcnMlp(AttackLinkPredictor):
         dropout_link: float = 0.5,
     ):
         if not TRANSFORMERS_AVAILABLE:
-            raise ImportError("transformers library is required for BERT models")
+            raise ImportError("transformers and peft libraries are required for FinetunedBertRgcnMlp")
 
         # BERT 本体とトークナイザ（まだ self に登録しない）
         model_name_local = model_name
@@ -430,9 +431,23 @@ class FinetunedBertRgcnMlp(AttackLinkPredictor):
         bert_model = AutoModel.from_pretrained(model_name_local)
         tokenizer = AutoTokenizer.from_pretrained(model_name_local)
 
-        # BERT を微調整モードに（デフォルトで requires_grad=True だが明示しておく）
+        # まず BERT の既存パラメータを固定し、LoRA だけを学習対象とする
         for p in bert_model.parameters():
-            p.requires_grad = True
+            p.requires_grad = False
+
+        # LoRA 設定（BERT の attention / FFN 層に低ランク適応を追加）
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.1,
+            bias="none",
+            # 特徴抽出用途（CLS 埋め込み取得）なので FEATURE_EXTRACTION を指定
+            task_type=TaskType.FEATURE_EXTRACTION,
+            target_modules=["query", "value"],
+        )
+        bert_model = get_peft_model(bert_model, lora_config)
+        # LoRA 部分のみ学習対象
+        assert any(p.requires_grad for p in bert_model.parameters()), "LoRA parameters are not trainable."
 
         # ノード列を一括トークナイズ
         encoded = tokenizer(
@@ -458,6 +473,12 @@ class FinetunedBertRgcnMlp(AttackLinkPredictor):
         self.all_nodes = all_nodes_list
         self.bert = bert_model
         self.tokenizer = tokenizer
+        # BERT に対して gradient checkpointing を有効化（メモリ削減）
+        if hasattr(self.bert, "gradient_checkpointing_enable"):
+            self.bert.gradient_checkpointing_enable()
+
+        # BERT エンコード時のミニバッチサイズ（GPU メモリとスループットのバランス用）
+        self.bert_batch_size = 64
 
         # link_predictor を FreezedBertRgcnMlp と同様に dropout_link で上書き
         self.link_predictor = nn.Sequential(
@@ -478,14 +499,28 @@ class FinetunedBertRgcnMlp(AttackLinkPredictor):
     def _encode_nodes_with_bert(self) -> torch.Tensor:
         """
         全ノードを BERT でエンコードし、CLS 埋め込み行列 (num_nodes, hidden_size) を返す。
+
+        メモリ使用量を抑えるため、ノードをミニバッチに分割して順次 BERT に通す。
+        BERT 自体は R-GCN と同じデバイス（通常は GPU）上に載せる想定。
         """
-        device = next(self.parameters()).device
-        inputs = {
-            "input_ids": self.input_ids.to(device),
-            "attention_mask": self.attention_mask.to(device),
-        }
-        outputs = self.bert(**inputs)
-        cls = outputs.last_hidden_state[:, 0]  # (num_nodes, hidden_size)
+        bert_device = next(self.bert.parameters()).device
+        input_ids = self.input_ids
+        attention_mask = self.attention_mask
+        num_nodes = input_ids.size(0)
+
+        cls_list = []
+        bs = self.bert_batch_size
+        for start in range(0, num_nodes, bs):
+            end = start + bs
+            batch_inputs = {
+                "input_ids": input_ids[start:end].to(bert_device),
+                "attention_mask": attention_mask[start:end].to(bert_device),
+            }
+            outputs = self.bert(**batch_inputs)
+            cls_batch = outputs.last_hidden_state[:, 0]  # (batch, hidden)
+            cls_list.append(cls_batch)
+
+        cls = torch.cat(cls_list, dim=0)  # (num_nodes, hidden_size)
         return cls
 
     def forward(self, x, edge_index, edge_type, edge_pairs):
@@ -496,7 +531,7 @@ class FinetunedBertRgcnMlp(AttackLinkPredictor):
             edge_type: エッジ種別（R-GCN 用）
             edge_pairs: 学習・評価対象のノードペア（ノードインデックスのタプル列）
         """
-        # BERT でノード埋め込みを計算
+        # BERT でノード埋め込みを計算（R-GCN と同じデバイス想定）
         h = self._encode_nodes_with_bert()
 
         # R-GCN 伝播

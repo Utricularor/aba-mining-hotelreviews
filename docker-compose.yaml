@@ -32,11 +32,13 @@ services:
       - .:/workspace
     stdin_open: true
     tty: true
-    device_requests:
-      - driver: nvidia
-        count: all
-        capabilities:
-          - gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
     command: bash
 
 
